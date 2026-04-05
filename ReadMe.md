@@ -1,65 +1,119 @@
 # Synapse — Circuit Simulator
 
-Synapse is a web-based circuit simulation workspace built on top of the open-source CircuitJS engine. It provides a clean interface for loading, building, saving, and revisiting electronic circuits, with per-user persistent storage handled through the EasyAuth platform.
+Web-based circuit simulation workspace built on CircuitJS, with per-user cloud storage via EasyAuth.
 
 ---
 
 ## What It Does
 
-Users open the workspace and are immediately presented with the CircuitJS simulator embedded in an iframe. From there they can load one of several built-in preset circuits, build their own from scratch inside the simulator, export the circuit text from CircuitJS, and save it to their account with a name and description. Saved circuits are accessible from the sidebar, the load modal, and a dedicated gallery page. The gallery lists every saved circuit with its name, description, and last-modified date, and supports deletion in place. Opening any circuit from the gallery or sidebar loads it directly back into the simulator with scopes preserved.
-
-Authentication is handled entirely by EasyAuth — there is no local user table, no password storage, and no session management written in the application itself.
+- Embeds the CircuitJS simulator in a clean workspace UI
+- Provides preset circuits (LED driver, RC filter, LC oscillator, etc.) loadable in one click
+- Lets users export circuit text from CircuitJS and save it to their account with a name and description
+- Persists oscilloscope scope panels across every circuit load by injecting scope definitions into the circuit text before compression
+- Shows saved circuits in a sidebar, a load modal, and a full gallery page with delete support
+- Handles authentication entirely through EasyAuth — no local user table, no password storage, no session logic
 
 ---
 
 ## Tech Stack
 
-### Backend
-
-**Python / Flask** serves all routes and API endpoints. Flask was chosen for its minimal surface area — the entire backend is a single `app.py` file with no ORM, no migration system, and no session middleware. Route protection is applied via decorators rather than middleware.
-
-**EasyAuth SDK** (`easy-auth-sdk`) replaces what would otherwise be a full authentication layer. It provides three things the application relies on: hosted login pages at `easy-auth.dev`, encrypted httponly cookie management, and a per-user JSON key-value store. The `@login_required` decorator protects routes that only need token verification. The `@fetch_user_data` decorator is used on routes that also need to read stored user data, injecting `username`, `user_data`, and `token` directly into the view function. There is no database — circuits are stored as a nested dict inside the EasyAuth user data store under the key `"circuits"`, keyed by integer ID.
-
-The SDK communicates with `easy-auth.dev` on every request to verify tokens server-side. Tokens are Fernet-encrypted (AES-128-CBC + HMAC-SHA256) and expire after one hour.
-
-### Frontend
-
-**Vanilla JavaScript** handles all client-side behaviour — preset loading, save and load modals, toast notifications, the recent circuits sidebar list, and URL parameter handling for direct circuit links. There are no frontend frameworks or build steps.
-
-**CircuitJS** is embedded as an iframe pointing to `falstad.com/circuit/circuitjs.html`. Circuit state is passed in and out via the `?ctz=` URL parameter, which accepts LZ-string compressed circuit text in CircuitJS's native format. Scope definitions (oscilloscope panels) are injected into every circuit's text before compression so they persist across circuit loads rather than only appearing in the default state.
-
-**LZ-String** (`lz-string` via CDN) handles the compression and encoding of circuit text before it is passed to the CircuitJS iframe URL.
-
-**Chart.js** renders the voltage and current waveform graphs shown below the simulator. Waveforms are computed analytically in JavaScript for each preset circuit type rather than being read from the simulator.
-
-**Jinja2** (via Flask) renders the gallery page server-side. The index page is static HTML — the simulator and sidebar data load client-side via `fetch` calls to the API endpoints.
-
-### Styling
-
-A single `style.css` file with CSS custom properties for theming. No preprocessor, no utility framework. The design uses DM Sans and DM Mono loaded from Google Fonts.
+| Layer | Technology | Role |
+|---|---|---|
+| Server | Python / Flask | Routes and API endpoints |
+| Auth + Storage | EasyAuth SDK (`easy-auth-sdk`) | Token verification, hosted login, per-user JSON store |
+| Simulator | CircuitJS (iframe) | Circuit engine and oscilloscope panels |
+| Compression | LZ-String (CDN) | Encodes circuit text for the `?ctz=` iframe URL parameter |
+| Graphs | Chart.js (CDN) | Voltage and current waveform panels |
+| Templates | Jinja2 | Server-side gallery page rendering |
+| Styling | Vanilla CSS | Single file, CSS custom properties, no preprocessor |
 
 ---
 
-## Data Flow
+## How the Pieces Connect
+
+**Authentication** — Every protected route uses `@login_required` or `@fetch_user_data` from the EasyAuth Flask SDK. On each request the decorator calls `easy-auth.dev` to verify the encrypted Fernet token stored in an httponly cookie. No token verification logic lives in the app.
+
+**Storage** — There is no database. Circuits are stored as a nested dict in each user's EasyAuth JSON store under the key `"circuits"`, keyed by integer ID. Every save reads the full existing store first, updates the `"circuits"` key, then writes the whole object back to avoid overwriting other keys.
+
+**Simulator loading** — Circuit state is passed to CircuitJS via the `?ctz=` URL parameter as LZ-String compressed circuit text. Before compressing, scope definition lines (`o ...`) are stripped from the incoming text and a fixed set of scope lines is appended, so oscilloscope panels survive every circuit switch.
+
+**Waveform graphs** — Voltage and current graphs are computed analytically in JavaScript for each preset type (RC step response, half-wave rectifier, LC tank, etc.). They are not read from the CircuitJS simulator.
+
+---
+
+## Authentication Flow
 
 ```
-User visits /
-  └── @login_required checks cookie token against easy-auth.dev
-        ├── Valid   → render index.html
-        └── Invalid → redirect to easy-auth.dev/auth/aryan/cpproject
+User visits protected route
+        │
+        ▼
+@login_required / @fetch_user_data
+checks encrypted cookie token against easy-auth.dev
+        │
+        ├── valid ──► inject token (+ user_data) into view function ──► render page
+        │
+        └── invalid ──► redirect to easy-auth.dev/login/aryan/cpproject
+                                │
+                                ▼
+                        user logs in on hosted page
+                                │
+                                ▼
+                        redirected back with ?token=<encrypted>
+                                │
+                                ▼
+                        decorator sets secure httponly cookie ──► page loads
+```
 
-User saves a circuit
-  └── POST /api/save
-        └── @fetch_user_data verifies token + loads user store
-              └── Reads existing circuits dict from user_data
-                    └── Appends new circuit entry
-                          └── send_or_update_user_data() writes full store back
+---
 
-User opens gallery
-  └── GET /gallery
-        └── @fetch_user_data verifies token + loads user store
-              └── Sorts circuits by updated_at descending
-                    └── Renders gallery.html server-side with circuit list
+## Save / Load Flow
+
+```
+POST /api/save
+        │
+        ▼
+@fetch_user_data verifies token + loads full user store
+        │
+        ▼
+read existing circuits dict from user_data["circuits"]
+        │
+        ▼
+append new circuit entry (auto-incremented int ID)
+        │
+        ▼
+send_or_update_user_data() writes full store back to easy-auth.dev
+
+
+GET /gallery
+        │
+        ▼
+@fetch_user_data verifies token + loads full user store
+        │
+        ▼
+sort circuits by updated_at descending
+        │
+        ▼
+Jinja2 renders gallery.html server-side with circuit list
+```
+
+---
+
+## EasyAuth User Data Structure
+
+```json
+{
+  "circuits": {
+    "1": {
+      "id": 1,
+      "name": "RC Low-Pass Filter",
+      "description": "1kΩ + 1µF",
+      "data": "$ 1 0.000005 ...",
+      "created_at": "2026-04-05 10:00:00",
+      "updated_at": "2026-04-05 10:00:00"
+    },
+    "2": { ... }
+  }
+}
 ```
 
 ---
@@ -68,32 +122,32 @@ User opens gallery
 
 ```
 .
-├── app.py              # Flask application — all routes and helpers
+├── app.py              # Flask app — all routes and helpers
 ├── templates/
 │   ├── index.html      # Simulator workspace
 │   └── gallery.html    # Saved circuits gallery
 └── static/
     ├── app.js          # All client-side logic
-    └── style.css       # Styling and layout
+    └── style.css       # Layout and styling
 ```
 
 ---
 
-## Environment
+## Environment Variables
 
-Configure credentials via environment variables or by calling `easyauth.configure()` directly at startup.
+| Variable | `configure()` equivalent | Description |
+|---|---|---|
+| `EASYAUTH_USERNAME` | `username` | EasyAuth account username |
+| `EASYAUTH_SERVICE_NAME` | `service_name` | Service registered on easy-auth.dev |
+| `EASYAUTH_API_KEY` | `api_key` | API key from the EasyAuth dashboard |
 
-| Variable                  | Description                        |
-|---------------------------|------------------------------------|
-| `EASYAUTH_USERNAME`       | EasyAuth account username          |
-| `EASYAUTH_SERVICE_NAME`   | Service name registered on easy-auth.dev |
-| `EASYAUTH_API_KEY`        | API key from the EasyAuth dashboard |
+---
 
-To run locally:
+## Running Locally
 
 ```bash
 pip install flask easy-auth-sdk[easyflask]
 python app.py
 ```
 
-The application starts on port 5000 by default.
+Starts on `http://localhost:5000`. On first visit you will be redirected to the EasyAuth hosted login page and returned with a session cookie.
