@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gallery — Synapse</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <style>body { overflow-y: auto; overflow-x: hidden; }</style>
+</head>
+<body>
+
+<div class="gallery-page">
+  <nav class="gallery-nav">
+    <a class="gallery-nav-logo" href="/">
+      <div class="logo-mark" style="width:28px;height:28px;background:var(--ink);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff">⚡</div>
+      <span style="font-size:15px;font-weight:600;color:var(--ink)">Synapse</span>
+    </a>
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <span style="font-size:13px;color:var(--ink-2)">Gallery</span>
+    <div style="flex:1"></div>
+    <a class="btn btn-primary" href="/">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      Back to Workspace
+    </a>
+  </nav>
+
+  <div class="gallery-content">
+    <div class="gallery-hero">
+      <h1>Saved Circuits</h1>
+      <p>{{ circuits|length }} circuit{{ 's' if circuits|length != 1 else '' }} saved — click any to open in the simulator.</p>
+    </div>
+
+    <div class="circuit-grid">
+      {% if not circuits %}
+        <div class="empty-state">
+          <div class="empty-icon">🔌</div>
+          <h3>No circuits saved yet</h3>
+          <p>Build something in the workspace and save it to see it here.</p>
+        </div>
+      {% else %}
+        {% for c in circuits %}
+        <div class="circuit-card">
+          <div class="card-preview">
+            <div class="card-preview-grid"></div>
+            <span style="position:relative;z-index:1">
+              {{ ['💡','⚡','〰','🔄','🔀','∿','🔋','📡'][(loop.index0 % 8)] }}
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="card-name">{{ c['name'] }}</div>
+            <div class="card-desc">{{ c['description'] if c['description'] else 'No description' }}</div>
+            <div class="card-meta">
+              <span>{{ c['updated_at'][:10] if c['updated_at'] else '—' }}</span>
+              <div class="card-actions">
+                <button class="btn btn-danger btn-icon"
+                  onclick="deleteCircuit({{ c['id'] }}, this)" title="Delete">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                </button>
+                <a class="btn btn-primary" href="/?id={{ c['id'] }}" style="font-size:12px;padding:5px 10px">Open</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+function toast(msg, type = 'info') {
+  const icons = { success: '✓', error: '✕', info: 'ℹ' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 180); }, 3000);
+}
+
+async function deleteCircuit(id, btn) {
+  if (!confirm('Delete this circuit? This cannot be undone.')) return;
+  const card = btn.closest('.circuit-card');
+  try {
+    const res = await fetch(`/api/delete/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error();
+    card.style.transition = 'all 0.22s ease';
+    card.style.opacity = '0'; card.style.transform = 'scale(0.96)';
+    setTimeout(() => { card.remove(); updateCount(); }, 220);
+    toast('Circuit deleted', 'success');
+  } catch (_) { toast('Delete failed', 'error'); }
+}
+
+function updateCount() {
+  const n = document.querySelectorAll('.circuit-card').length;
+  const p = document.querySelector('.gallery-hero p');
+  if (p) p.textContent = `${n} circuit${n !== 1 ? 's' : ''} saved — click any to open in the simulator.`;
+  if (n === 0) document.querySelector('.circuit-grid').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">🔌</div>
+      <h3>No circuits saved yet</h3>
+      <p>Build something in the workspace and save it to see it here.</p>
+    </div>`;
+}
+</script>
+</body>
+</html>

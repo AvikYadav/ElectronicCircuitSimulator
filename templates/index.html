@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synapse — Circuit Simulator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+<!-- ── TOP BAR ── -->
+<header class="topbar">
+  <a class="logo" href="/">
+    <div class="logo-mark">⚡</div>
+    <span class="logo-text">Synapse</span>
+  </a>
+  <div class="topbar-divider"></div>
+  <div class="circuit-name-wrap">
+    <span class="circuit-name" id="circuitName">Untitled Circuit</span>
+    <span class="circuit-badge">CircuitJS</span>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost" onclick="newCircuit()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      New
+    </button>
+    <button class="btn btn-ghost" onclick="openSaveModal()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      Save
+    </button>
+    <button class="btn btn-ghost" onclick="openLoadModal()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      Load
+    </button>
+    <div class="topbar-divider"></div>
+    <a class="btn btn-ghost" href="/gallery">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Gallery
+    </a>
+    <button class="btn btn-icon btn-outline" onclick="toggleSidebar()" title="Toggle sidebar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ── WORKSPACE ── -->
+<div class="workspace">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <div class="sidebar-section">
+        <div class="section-label">Preset Circuits</div>
+        <div id="presetList"></div>
+      </div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section">
+        <div class="section-label">Saved</div>
+        <div id="recentList"><div class="recent-empty">Loading…</div></div>
+      </div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section">
+        <div class="section-label">Quick Reference</div>
+        <div style="padding:0 4px;font-size:11px;color:var(--ink-2);line-height:1.8">
+          <span style="color:var(--ink-muted)">Draw</span> — Drag components to canvas<br>
+          <span style="color:var(--ink-muted)">Wire</span> — Click component terminals<br>
+          <span style="color:var(--ink-muted)">Edit</span> — Right-click any element<br>
+          <span style="color:var(--ink-muted)">Probe</span> — Hover to inspect values
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN COLUMN -->
+  <div class="main-column">
+
+    <!-- SIMULATOR -->
+    <div class="simulator-area">
+      <iframe id="circuitFrame"
+        src="https://www.falstad.com/circuit/circuitjs.html"
+        frameborder="0" allowfullscreen>
+      </iframe>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="status-bar">
+      <div class="status-item"><div class="status-dot"></div> Simulation <strong>running</strong></div>
+      <div class="status-item">Engine: <strong>CircuitJS 2.x</strong></div>
+      <div class="status-spacer"></div>
+      <div class="status-item">V<sub>peak</sub>: <strong id="vPeak">—</strong></div>
+      <div class="status-item">I<sub>peak</sub>: <strong id="iPeak">—</strong></div>
+    </div>
+
+  </div><!-- /main-column -->
+</div><!-- /workspace -->
+
+<!-- ── SAVE MODAL ── -->
+<div class="modal-backdrop" id="saveModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Save Circuit</span>
+      <button class="modal-close" onclick="closeModal('saveModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label" for="saveName">Name</label>
+        <input type="text" id="saveName" placeholder="e.g. Full-Wave Rectifier" maxlength="80" />
+      </div>
+      <div class="field">
+        <label class="field-label" for="saveDesc">Description <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-muted)">(optional)</span></label>
+        <input type="text" id="saveDesc" placeholder="Brief description" maxlength="200" />
+      </div>
+      <div class="field">
+        <label class="field-label" for="saveData">Circuit Data</label>
+        <div class="export-steps">
+          <div class="export-step"><div class="step-num">1</div>In CircuitJS click <strong>File</strong></div>
+          <div class="export-step"><div class="step-num">2</div>Choose <strong>Export as Text…</strong></div>
+          <div class="export-step"><div class="step-num">3</div>Copy all text and paste below</div>
+        </div>
+        <textarea id="saveData" rows="5" class="mono" placeholder="Paste circuit text here…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('saveModal')">Cancel</button>
+      <button class="btn btn-primary" id="saveBtnPrimary" onclick="saveCircuit()">Save Circuit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── LOAD MODAL ── -->
+<div class="modal-backdrop" id="loadModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Load Circuit</span>
+      <button class="modal-close" onclick="closeModal('loadModal')">×</button>
+    </div>
+    <div class="modal-body" style="padding-bottom:8px">
+      <div id="loadList" style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <a class="btn btn-ghost" href="/gallery">View Gallery →</a>
+      <button class="btn btn-ghost" onclick="closeModal('loadModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOASTS ── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── SCRIPTS ── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+
+</body>
+</html>
