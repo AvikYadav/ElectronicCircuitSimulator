@@ -26,8 +26,8 @@ def get_circuits(user_data) -> dict:
 
 
 def get_full_user_data(token: str) -> dict:
-    raw = get_connector().fetch_user_data(token)
-    return unwrap(raw) if raw else {}
+    raw = get_connector().get_user_data(token)
+    return raw['data'] if isinstance(raw['data'],dict) else {}
 
 
 
